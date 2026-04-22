@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -25,21 +24,37 @@ export default function Register() {
     }
 
     setStatus("loading");
+    setMessage("");
 
     try {
-      const { error } = await supabase
-        .from("registrations")
-        .insert([form]);
+      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      if (error) throw error;
+      const res = await fetch(
+        "https://nqfuwwyqkrivempvixkm.supabase.co/functions/v1/register",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify(form),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Registration failed");
+      }
 
       setStatus("success");
-      setMessage("🎉 Registered successfully!");
+      setMessage("🎉 Registered! Check your email for your QR ticket.");
       setForm({ name: "", email: "", phone: "", role: "" });
 
     } catch (err: any) {
       setStatus("error");
-      setMessage(err.message);
+      setMessage(err.message || "Something went wrong");
     }
   };
 
@@ -64,6 +79,7 @@ export default function Register() {
                 setForm({ ...form, name: e.target.value })
               }
               required
+              style={input}
             />
 
             <input
@@ -74,6 +90,7 @@ export default function Register() {
                 setForm({ ...form, email: e.target.value })
               }
               required
+              style={input}
             />
 
             <input
@@ -82,6 +99,7 @@ export default function Register() {
               onChange={(e) =>
                 setForm({ ...form, phone: e.target.value })
               }
+              style={input}
             />
 
             <select
@@ -90,6 +108,7 @@ export default function Register() {
                 setForm({ ...form, role: e.target.value })
               }
               required
+              style={input}
             >
               <option value="">Select Role</option>
               <option value="audience">Audience</option>
@@ -100,7 +119,7 @@ export default function Register() {
               <p style={{ color: "red" }}>{message}</p>
             )}
 
-            <button type="submit">
+            <button type="submit" style={button}>
               {status === "loading" ? "Loading..." : "Register"}
             </button>
           </form>
@@ -122,5 +141,23 @@ const card: React.CSSProperties = {
   border: "1px solid #ccc",
   borderRadius: 10,
   width: 300,
+  textAlign: "center",
 };
-```
+
+const input: React.CSSProperties = {
+  width: "100%",
+  marginBottom: 10,
+  padding: 10,
+  borderRadius: 6,
+  border: "1px solid #ccc",
+};
+
+const button: React.CSSProperties = {
+  width: "100%",
+  padding: 10,
+  borderRadius: 6,
+  border: "none",
+  background: "#7c3aed",
+  color: "#fff",
+  cursor: "pointer",
+};
