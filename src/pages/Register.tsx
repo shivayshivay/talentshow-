@@ -2,10 +2,10 @@
 import { useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-// ✅ Correct env variables
+// ✅ Supabase client
 const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
+  import.meta.env.VITE_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_ANON_KEY!
 );
 
 const EVENT = {
@@ -42,9 +42,14 @@ export default function Register() {
     setMessage("");
 
     try {
-      const { error } = await supabase
+      console.log("Submitting:", form);
+
+      const { data, error } = await supabase
         .from("registrations")
-        .insert([form]);
+        .insert([form])
+        .select();
+
+      console.log("Response:", data, error);
 
       if (error) throw error;
 
@@ -53,50 +58,25 @@ export default function Register() {
       setForm({ name: "", email: "", phone: "", role: "" });
 
     } catch (err: any) {
+      console.error("Error:", err);
       setStatus("error");
       setMessage(err.message || "Something went wrong.");
     }
   };
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#0a0612",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "20px",
-      fontFamily: "'Segoe UI', Arial, sans-serif",
-    }}>
-      <div style={{
-        width: "100%",
-        maxWidth: "480px",
-        background: "#12091f",
-        borderRadius: "16px",
-        border: "1px solid #2d1b4e",
-        overflow: "hidden",
-      }}>
+    <div style={container}>
+      <div style={card}>
 
         {/* Header */}
-        <div style={{
-          background: "linear-gradient(135deg,#1a0533 0%,#0d0220 100%)",
-          padding: "32px",
-          textAlign: "center",
-          borderBottom: "1px solid #2d1b4e",
-        }}>
-          <div style={{ fontSize: "22px", fontWeight: 800, color: "#fff" }}>
-            {EVENT.name}
-          </div>
-          <div style={{ marginTop: "10px", color: "#a78bca", fontSize: "13px" }}>
-            📅 {EVENT.date} · {EVENT.time}
-          </div>
-          <div style={{ color: "#7c6a9a", fontSize: "12px" }}>
-            📍 {EVENT.venue}
-          </div>
+        <div style={header}>
+          <h2 style={{ margin: 0 }}>{EVENT.name}</h2>
+          <p style={subText}>📅 {EVENT.date} · {EVENT.time}</p>
+          <p style={subText}>📍 {EVENT.venue}</p>
         </div>
 
         {/* Form */}
-        <div style={{ padding: "24px" }}>
+        <div style={{ padding: 24 }}>
           {status === "success" ? (
             <div style={{ textAlign: "center", color: "#22c55e" }}>
               <h3>✅ Registration Successful</h3>
@@ -155,7 +135,11 @@ export default function Register() {
                 <p style={{ color: "red" }}>{message}</p>
               )}
 
-              <button type="submit" disabled={status === "loading"}>
+              <button
+                type="submit"
+                disabled={status === "loading"}
+                style={buttonStyle}
+              >
                 {status === "loading" ? "Registering..." : "Register"}
               </button>
             </form>
@@ -166,11 +150,52 @@ export default function Register() {
   );
 }
 
+// 🎨 Styles
+const container: React.CSSProperties = {
+  minHeight: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#0a0612",
+};
+
+const card: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 450,
+  background: "#12091f",
+  borderRadius: 12,
+  overflow: "hidden",
+  border: "1px solid #2d1b4e",
+};
+
+const header: React.CSSProperties = {
+  padding: 20,
+  textAlign: "center",
+  borderBottom: "1px solid #2d1b4e",
+  color: "#fff",
+};
+
+const subText: React.CSSProperties = {
+  fontSize: 12,
+  color: "#a78bca",
+  margin: "4px 0",
+};
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  marginBottom: "12px",
-  padding: "10px",
-  borderRadius: "6px",
+  marginBottom: 12,
+  padding: 10,
+  borderRadius: 6,
   border: "1px solid #444",
+};
+
+const buttonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: 12,
+  background: "#7c3aed",
+  color: "#fff",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
 };
 ```
