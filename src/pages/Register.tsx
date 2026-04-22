@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
 export default function Register() {
   const [form, setForm] = useState({
     name: "",
@@ -24,56 +27,43 @@ export default function Register() {
     }
 
     setStatus("loading");
-    setMessage("");
 
     try {
-      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
       const res = await fetch(
-        "https://nqfuwwyqkrivempvixkm.supabase.co/functions/v1/register",
+        `${SUPABASE_URL}/functions/v1/register`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
             apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify(form),
         }
       );
 
-      const text = await res.text();
-      console.log("RAW RESPONSE:", text);
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error("Invalid server response");
-      }
+      const data = await res.json();
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Registration failed");
-      }
+      if (!data.success) throw new Error(data.error);
 
       setStatus("success");
-      setMessage("🎉 Registered! Check your email for your QR ticket.");
+      setMessage("🎉 Check your email for QR ticket!");
       setForm({ name: "", email: "", phone: "", role: "" });
 
     } catch (err: any) {
       setStatus("error");
-      setMessage(err.message || "Something went wrong");
+      setMessage(err.message || "Registration failed");
     }
   };
 
   return (
     <div style={container}>
       <div style={card}>
-        <h2>🎤 Izee Got Talent</h2>
+        <h2 style={{ color: "white" }}>🎤 Izee Got Talent</h2>
 
         {status === "success" ? (
           <>
-            <p>{message}</p>
+            <p style={{ color: "#22c55e" }}>{message}</p>
             <button onClick={() => setStatus("idle")}>
               Register Again
             </button>
@@ -127,8 +117,8 @@ export default function Register() {
               <p style={{ color: "red" }}>{message}</p>
             )}
 
-            <button type="submit" style={button}>
-              {status === "loading" ? "Loading..." : "Register"}
+            <button type="submit" disabled={status === "loading"}>
+              {status === "loading" ? "Registering..." : "Register"}
             </button>
           </form>
         )}
@@ -140,32 +130,23 @@ export default function Register() {
 const container: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
-  alignItems: "center",
   justifyContent: "center",
+  alignItems: "center",
+  background: "#0a0612",
 };
 
 const card: React.CSSProperties = {
-  padding: 20,
-  border: "1px solid #ccc",
-  borderRadius: 10,
-  width: 300,
+  padding: 30,
+  borderRadius: 12,
+  background: "#12091f",
+  width: 320,
   textAlign: "center",
 };
 
 const input: React.CSSProperties = {
   width: "100%",
-  marginBottom: 10,
+  marginBottom: 12,
   padding: 10,
   borderRadius: 6,
-  border: "1px solid #ccc",
-};
-
-const button: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 6,
-  border: "none",
-  background: "#7c3aed",
-  color: "#fff",
-  cursor: "pointer",
+  border: "1px solid #444",
 };
