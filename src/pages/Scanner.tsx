@@ -41,7 +41,7 @@ export default function Scanner() {
 
         try {
           const id = extractId(scannedText);
-          if (!id) throw new Error("Invalid QR");
+          if (!id) throw new Error("INVALID QR");
 
           const { data, error } = await supabase
             .from("registrations")
@@ -49,14 +49,14 @@ export default function Scanner() {
             .eq("id", id)
             .single();
 
-          if (error || !data) throw new Error("Invalid Ticket");
+          if (error || !data) throw new Error("INVALID TICKET");
 
           if (data.status !== "approved") {
             setStatus("error");
-            setMessage(`❌ ENTRY DENIED\n${data.name}`);
+            setMessage(`ENTRY DENIED\n${data.name}`);
           } else if (data.checked_in) {
             setStatus("error");
-            setMessage(`⚠️ ALREADY USED\n${data.name}`);
+            setMessage(`ALREADY USED\n${data.name}`);
           } else {
             await supabase
               .from("registrations")
@@ -67,11 +67,11 @@ export default function Scanner() {
               .eq("id", id);
 
             setStatus("success");
-            setMessage(`✅ ENTRY ALLOWED\n${data.name}`);
+            setMessage(`ENTRY ALLOWED\n${data.name}`);
           }
         } catch (err: any) {
           setStatus("error");
-          setMessage(err.message || "Invalid QR");
+          setMessage(err.message || "ERROR");
         }
 
         resetScan();
@@ -114,29 +114,33 @@ export default function Scanner() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.title}>🎟️ ENTRY SCANNER</h1>
+      {/* TOP STATUS BAR */}
+      <div
+        style={{
+          ...styles.statusBar,
+          background:
+            status === "success"
+              ? "#16a34a"
+              : status === "error"
+              ? "#dc2626"
+              : "#111827",
+        }}
+      >
+        {status === "idle" && "READY TO SCAN"}
+        {status === "scanning" && "SCANNING..."}
+        {status === "success" && "ENTRY ALLOWED"}
+        {status === "error" && "ENTRY DENIED"}
+      </div>
 
-      {/* 🔥 BIG FULL SCREEN SCANNER */}
+      {/* CAMERA */}
       <div style={styles.cameraWrapper}>
         <video ref={videoRef} style={styles.video} />
       </div>
 
-      {/* STATUS */}
-      {status === "idle" && <p style={styles.idle}>Ready to scan</p>}
-      {status === "scanning" && <p style={styles.scan}>Scanning...</p>}
-
-      {/* 🔥 BIG RESULT POPUP */}
+      {/* RESULT TEXT */}
       {(status === "success" || status === "error") && (
-        <div
-          style={{
-            ...styles.popup,
-            background:
-              status === "success"
-                ? "linear-gradient(135deg, #22c55e, #16a34a)"
-                : "linear-gradient(135deg, #ef4444, #dc2626)",
-          }}
-        >
-          <p style={styles.popupText}>{message}</p>
+        <div style={styles.resultBox}>
+          <p style={styles.resultText}>{message}</p>
         </div>
       )}
     </div>
@@ -146,29 +150,30 @@ export default function Scanner() {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: "100vh",
-    background: "#050311",
+    background: "#000", // 🔥 pure black for max contrast
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    justifyContent: "flex-start",
-    padding: "10px",
-    fontFamily: "Space Grotesk, sans-serif",
+    fontFamily: "system-ui",
   },
 
-  title: {
+  statusBar: {
+    width: "100%",
+    textAlign: "center",
+    padding: "14px",
     fontSize: "20px",
-    marginBottom: 10,
-    fontWeight: 700,
+    fontWeight: 900,
+    color: "#fff",
+    letterSpacing: "1px",
   },
 
-  /* 🔥 THIS IS THE MAIN FIX */
   cameraWrapper: {
-    width: "95vw",          // almost full screen
-    maxWidth: "600px",      // limit for desktop only
+    width: "100vw",
+    maxWidth: "600px",
     aspectRatio: "1/1",
-    borderRadius: 20,
+    marginTop: 10,
+    borderRadius: 0, // 🔥 full edge look
     overflow: "hidden",
-    border: "3px solid #7c3aed",
   },
 
   video: {
@@ -177,34 +182,16 @@ const styles: Record<string, React.CSSProperties> = {
     objectFit: "cover",
   },
 
-  idle: {
-    color: "#cbd5f5",
-    fontSize: "18px",
-    marginTop: 12,
-  },
-
-  scan: {
-    color: "#facc15",
-    fontSize: "18px",
-    marginTop: 12,
-    fontWeight: 600,
-  },
-
-  /* 🔥 BIG READABLE POPUP */
-  popup: {
-    marginTop: 16,
+  resultBox: {
+    width: "100%",
     padding: "20px",
-    borderRadius: 16,
-    color: "#fff",
-    fontWeight: 900,
-    fontSize: "22px",  // BIG
     textAlign: "center",
-    width: "95%",
-    maxWidth: 500,
-    boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
   },
 
-  popupText: {
+  resultText: {
+    fontSize: "24px", // 🔥 BIG TEXT
+    fontWeight: 900,
+    color: "#fff",
     whiteSpace: "pre-line",
   },
 };
