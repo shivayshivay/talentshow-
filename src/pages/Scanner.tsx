@@ -32,6 +32,7 @@ export default function Scanner() {
 
         const scannedText = result.data;
 
+        // جلوگیری از اسکن تکراری
         if (scannedText === lastScan) {
           resetScan();
           return;
@@ -50,29 +51,33 @@ export default function Scanner() {
             .single();
 
           if (error || !data) throw new Error("Invalid Ticket");
-          // 🚫 Reject if not approved
+
+          // 🚫 Not approved
           if (data.status !== "approved") {
             setStatus("error");
-            setMessage(`❌ Entry Denied\n${data.name}`);
+            setMessage(`❌ Access Denied\n${data.name}`);
+            return;
           }
-          // ⚠️ Already used
-          else if (data.checked_in) {
+
+          // ⚠️ Already checked in
+          if (data.checked_in) {
             setStatus("error");
             setMessage(`⚠️ Already Checked In\n${data.name}`);
+            return;
           }
+
           // ✅ Valid entry
-          else {
-            await supabase
+          await supabase
             .from("registrations")
             .update({
               checked_in: true,
               checked_in_at: new Date().toISOString(),
             })
             .eq("id", id);
-            setStatus("success");
-            setMessage(`✅ Entry Allowed\n${data.name}`);
-          }
-          
+
+          setStatus("success");
+          setMessage(`✅ Entry Allowed\n${data.name}`);
+
         } catch (err: any) {
           setStatus("error");
           setMessage(err.message || "Invalid QR");
@@ -113,7 +118,7 @@ export default function Scanner() {
       scanLockRef.current = false;
       setStatus("idle");
       setMessage("");
-    }, 2500);
+    }, 3500); // ⏳ better visibility
   };
 
   return (
@@ -125,11 +130,11 @@ export default function Scanner() {
           <video ref={videoRef} style={styles.video} />
         </div>
 
-        {/* STATUS TEXT */}
+        {/* Status */}
         {status === "idle" && <p style={styles.idle}>Ready to scan</p>}
         {status === "scanning" && <p style={styles.scan}>Scanning...</p>}
 
-        {/* POPUP */}
+        {/* Result Popup */}
         {(status === "success" || status === "error") && (
           <div
             style={{
@@ -156,11 +161,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     fontFamily: "Space Grotesk, sans-serif",
+    padding: "16px",
   },
+
   card: {
-    width: "90%",
-    maxWidth: 500,
-    padding: 24,
+    width: "100%",
+    maxWidth: 520,
+    padding: 20,
     borderRadius: 20,
     background: "rgba(12,6,22,0.9)",
     backdropFilter: "blur(20px)",
@@ -168,34 +175,53 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
     boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
   },
+
   title: {
-    marginBottom: 20,
-    fontSize: 22,
+    marginBottom: 16,
+    fontSize: "clamp(18px, 5vw, 24px)",
+    fontWeight: 700,
   },
+
   cameraWrapper: {
     width: "100%",
+    maxWidth: 420,
+    margin: "0 auto",
     aspectRatio: "1/1",
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: "hidden",
-    border: "2px solid #7c3aed",
-    marginBottom: 16,
+    border: "3px solid #7c3aed",
   },
+
   video: {
     width: "100%",
     height: "100%",
     objectFit: "cover",
   },
-  idle: { color: "#9ca3af" },
-  scan: { color: "#eab308" },
+
+  idle: {
+    color: "#cbd5f5",
+    fontSize: "clamp(14px, 4vw, 18px)",
+    marginTop: 14,
+  },
+
+  scan: {
+    color: "#facc15",
+    fontSize: "clamp(14px, 4vw, 18px)",
+    marginTop: 14,
+    fontWeight: 600,
+  },
 
   popup: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 14,
+    marginTop: 18,
+    padding: "18px 16px",
+    borderRadius: 16,
     color: "#fff",
-    fontWeight: 700,
-    animation: "fadeIn 0.3s ease",
+    fontWeight: 800,
+    fontSize: "clamp(16px, 5vw, 20px)",
+    lineHeight: 1.5,
+    boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
   },
+
   popupText: {
     whiteSpace: "pre-line",
   },
