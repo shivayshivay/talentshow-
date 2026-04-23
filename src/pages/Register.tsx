@@ -21,6 +21,7 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!form.name || !form.email || !form.role) {
       setStatus("error");
       setMessage("⚠️ Please fill all required fields");
@@ -43,7 +44,12 @@ export default function Register() {
 
       const text = await res.text();
       let data: any;
-      try { data = JSON.parse(text); } catch { throw new Error("Server error or invalid response"); }
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Invalid server response");
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Registration failed");
@@ -52,6 +58,7 @@ export default function Register() {
       setTicket(data.ticket);
       setStatus("success");
       setMessage("🎉 Registration successful! Check your email for your QR ticket.");
+
       setForm({ name: "", email: "", phone: "", role: "" });
     } catch (err: any) {
       setStatus("error");
@@ -61,26 +68,30 @@ export default function Register() {
 
   const downloadPDF = async () => {
     if (!ticket) return;
+
     const html2pdf = (await import("html2pdf.js")).default;
     const el = ticketRef.current;
+
     if (!el) return;
-    html2pdf().set({
-      margin: 0,
-      filename: `izee-ticket-${ticket.name.replace(/\s+/g, "-")}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: "px", format: [420, 600], orientation: "portrait" },
-    }).from(el).save();
+
+    html2pdf()
+      .set({
+        margin: 0,
+        filename: `izee-ticket-${ticket.name.replace(/\s+/g, "-")}.pdf`,
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: "px", format: [420, 600], orientation: "portrait" },
+      })
+      .from(el)
+      .save();
   };
 
   return (
     <div style={styles.container}>
-      {/* Decorative blobs */}
       <div style={styles.blob1} />
       <div style={styles.blob2} />
 
       <div style={styles.card}>
-        {/* Header */}
         <div style={styles.header}>
           <div style={styles.badge}>🎤 LIVE EVENT</div>
           <h1 style={styles.title}>Izee Got Talent</h1>
@@ -90,11 +101,10 @@ export default function Register() {
 
         {status === "success" && ticket ? (
           <div style={styles.successArea}>
-            <div style={{ color: "#22c55e", fontSize: 40, marginBottom: 8 }}>✅</div>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
             <h3 style={{ color: "#fff", marginBottom: 4 }}>You're In!</h3>
             <p style={{ color: "#a78bfa", marginBottom: 20, fontSize: 14 }}>{message}</p>
 
-            {/* Ticket Preview */}
             <div ref={ticketRef} style={styles.ticket}>
               <div style={styles.ticketHeader}>
                 <span style={{ fontSize: 24 }}>🎤</span>
@@ -104,28 +114,53 @@ export default function Register() {
                 </div>
                 <div style={styles.ticketBadge}>{ticket.role.toUpperCase()}</div>
               </div>
+
               <div style={styles.ticketBody}>
                 <div style={styles.ticketInfo}>
                   <div style={styles.ticketLabel}>NAME</div>
                   <div style={styles.ticketValue}>{ticket.name}</div>
                 </div>
+
                 <div style={styles.ticketInfo}>
                   <div style={styles.ticketLabel}>EMAIL</div>
                   <div style={styles.ticketValue}>{ticket.email}</div>
                 </div>
+
                 <div style={styles.ticketQR}>
-                  <img src={ticket.qrUrl} alt="QR Code" width={150} height={150} style={{ borderRadius: 8 }} />
-                  <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>Scan at entry gate</p>
+                  <img
+                    src={ticket.qrUrl}
+                    alt="QR Code"
+                    width={150}
+                    height={150}
+                    style={{ borderRadius: 8 }}
+                  />
+                  <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>
+                    Scan at entry gate
+                  </p>
                 </div>
               </div>
+
               <div style={styles.ticketFooter}>
-                <span style={{ fontSize: 11, color: "#6b7280" }}>Ticket ID: {ticket.id.slice(0, 8).toUpperCase()}</span>
+                <span style={{ fontSize: 11, color: "#6b7280" }}>
+                  Ticket ID: {ticket.id.slice(0, 8).toUpperCase()}
+                </span>
               </div>
             </div>
 
             <div style={styles.actionRow}>
-              <button onClick={downloadPDF} style={styles.downloadBtn}>⬇️ Download PDF Ticket</button>
-              <button onClick={() => { setStatus("idle"); setTicket(null); }} style={styles.againBtn}>Register Another</button>
+              <button onClick={downloadPDF} style={styles.downloadBtn}>
+                ⬇️ Download PDF Ticket
+              </button>
+
+              <button
+                onClick={() => {
+                  setStatus("idle");
+                  setTicket(null);
+                }}
+                style={styles.againBtn}
+              >
+                Register Another
+              </button>
             </div>
           </div>
         ) : (
@@ -177,9 +212,7 @@ export default function Register() {
               </select>
             </div>
 
-            {status === "error" && (
-              <div style={styles.errorBox}>{message}</div>
-            )}
+            {status === "error" && <div style={styles.errorBox}>{message}</div>}
 
             <button
               type="submit"
@@ -208,95 +241,52 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   blob1: {
-    position: "absolute", top: -200, left: -200, width: 500, height: 500,
+    position: "absolute",
+    top: -200,
+    left: -200,
+    width: 500,
+    height: 500,
     background: "radial-gradient(circle, rgba(124,58,237,0.25) 0%, transparent 70%)",
-    borderRadius: "50%", pointerEvents: "none",
+    borderRadius: "50%",
   },
   blob2: {
-    position: "absolute", bottom: -200, right: -200, width: 500, height: 500,
+    position: "absolute",
+    bottom: -200,
+    right: -200,
+    width: 500,
+    height: 500,
     background: "radial-gradient(circle, rgba(6,182,212,0.2) 0%, transparent 70%)",
-    borderRadius: "50%", pointerEvents: "none",
+    borderRadius: "50%",
   },
   card: {
-    width: "100%", maxWidth: 460,
+    width: "100%",
+    maxWidth: 460,
     background: "rgba(18,9,31,0.95)",
-    backdropFilter: "blur(20px)",
-    border: "1px solid rgba(124,58,237,0.3)",
-    borderRadius: 20, padding: "32px 28px",
-    boxShadow: "0 25px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)",
-    position: "relative", zIndex: 1,
+    borderRadius: 20,
+    padding: "32px 28px",
   },
   header: { textAlign: "center", marginBottom: 28 },
-  badge: {
-    display: "inline-block", background: "rgba(124,58,237,0.2)",
-    border: "1px solid rgba(124,58,237,0.5)", color: "#a78bfa",
-    padding: "4px 14px", borderRadius: 20, fontSize: 11, letterSpacing: 2,
-    fontWeight: 700, marginBottom: 12, textTransform: "uppercase",
-  },
-  title: {
-    fontFamily: "'Orbitron', sans-serif", fontSize: 28, fontWeight: 900,
-    color: "#fff", margin: "0 0 4px",
-    background: "linear-gradient(135deg, #fff 0%, #a78bfa 100%)",
-    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-  },
-  subtitle: { color: "#06b6d4", fontSize: 14, fontWeight: 600, margin: "0 0 8px" },
-  tagline: { color: "#6b7280", fontSize: 13, margin: 0 },
-  form: { display: "flex", flexDirection: "column", gap: 0 },
+  badge: { color: "#a78bfa", marginBottom: 12 },
+  title: { color: "#fff" },
+  subtitle: { color: "#06b6d4" },
+  tagline: { color: "#6b7280" },
+  form: { display: "flex", flexDirection: "column" },
   field: { marginBottom: 16 },
-  label: { display: "block", color: "#a78bfa", fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
-  input: {
-    width: "100%", padding: "12px 14px", borderRadius: 10,
-    border: "1px solid rgba(124,58,237,0.3)", background: "rgba(15,8,32,0.8)",
-    color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box",
-    transition: "border-color 0.2s",
-    fontFamily: "'Space Grotesk', sans-serif",
-  },
-  errorBox: {
-    background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
-    color: "#f87171", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16,
-  },
-  submitBtn: {
-    width: "100%", padding: "14px", borderRadius: 10, border: "none",
-    background: "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
-    color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer",
-    boxShadow: "0 8px 32px rgba(124,58,237,0.4)",
-    fontFamily: "'Space Grotesk', sans-serif", letterSpacing: 0.5,
-  },
+  label: { color: "#a78bfa", fontSize: 11 },
+  input: { padding: 12, borderRadius: 10 },
+  errorBox: { color: "#f87171", marginBottom: 16 },
+  submitBtn: { padding: 14, borderRadius: 10 },
   successArea: { textAlign: "center" },
-  ticket: {
-    background: "linear-gradient(135deg, #0f0820 0%, #1a0b2e 100%)",
-    border: "1px solid rgba(124,58,237,0.5)",
-    borderRadius: 16, overflow: "hidden", marginBottom: 20, textAlign: "left",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-  },
-  ticketHeader: {
-    background: "linear-gradient(135deg, #7c3aed, #06b6d4)",
-    padding: "14px 16px", display: "flex", alignItems: "center", gap: 12,
-  },
-  ticketBadge: {
-    marginLeft: "auto", background: "rgba(255,255,255,0.2)",
-    color: "#fff", padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-  },
+  ticket: { marginBottom: 20 },
+  ticketHeader: { display: "flex", gap: 12 },
+  ticketBadge: { marginLeft: "auto" },
   ticketBody: { padding: 16 },
   ticketInfo: { marginBottom: 12 },
-  ticketLabel: { color: "#6b7280", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 2 },
-  ticketValue: { color: "#fff", fontSize: 14, fontWeight: 600 },
-  ticketQR: { textAlign: "center", marginTop: 16 },
-  ticketFooter: {
-    borderTop: "1px dashed rgba(124,58,237,0.3)",
-    padding: "10px 16px", display: "flex", justifyContent: "center",
-  },
-  actionRow: { display: "flex", gap: 10, flexDirection: "column" },
-  downloadBtn: {
-    width: "100%", padding: "12px", borderRadius: 10, border: "none",
-    background: "linear-gradient(135deg, #7c3aed, #06b6d4)",
-    color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14,
-    fontFamily: "'Space Grotesk', sans-serif",
-  },
-  againBtn: {
-    width: "100%", padding: "12px", borderRadius: 10,
-    border: "1px solid rgba(124,58,237,0.4)", background: "transparent",
-    color: "#a78bfa", fontWeight: 600, cursor: "pointer", fontSize: 14,
-    fontFamily: "'Space Grotesk', sans-serif",
-  },
+  ticketLabel: { fontSize: 10 },
+  ticketValue: { fontSize: 14 },
+  ticketQR: { textAlign: "center" },
+  ticketFooter: { textAlign: "center" },
+  actionRow: { display: "flex", flexDirection: "column", gap: 10 },
+  downloadBtn: { padding: 12 },
+  againBtn: { padding: 12 },
 };
