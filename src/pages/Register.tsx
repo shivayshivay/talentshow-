@@ -36,9 +36,17 @@ export default function Register() {
         body: JSON.stringify(form),
       });
 
-      const data = await res.json();
+      // ✅ SAFE RESPONSE HANDLING (fixes your JSON error)
+      const text = await res.text();
 
-      if (!data.success) throw new Error(data.error);
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Server error or wrong API URL");
+      }
+
+      if (!data.success) throw new Error(data.error || "Registration failed");
 
       setStatus("success");
       setMessage("🎉 Check your email for your QR ticket!");
@@ -46,7 +54,7 @@ export default function Register() {
 
     } catch (err: any) {
       setStatus("error");
-      setMessage(err.message || "Registration failed");
+      setMessage(err.message || "Something went wrong");
     }
   };
 
