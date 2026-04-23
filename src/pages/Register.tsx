@@ -353,7 +353,15 @@ const STYLE = `
 `;
 
 export default function Register() {
-  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "", year: "", semester: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    role: "",
+    year: "",
+    semester: "",
+    uucms: "", // ✅ added
+  });
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [ticket, setTicket] = useState<TicketData | null>(null);
@@ -364,7 +372,7 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.role || !form.year || !form.semester) {
+    if (!form.name || !form.email || !form.role || !form.year || !form.semester || !form.uucms) {
       setStatus("error");
       setMessage("⚠️ Please fill all required fields");
       return;
