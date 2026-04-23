@@ -32,7 +32,6 @@ export default function Scanner() {
 
         const scannedText = result.data;
 
-        // جلوگیری از اسکن تکراری
         if (scannedText === lastScan) {
           resetScan();
           return;
@@ -52,32 +51,24 @@ export default function Scanner() {
 
           if (error || !data) throw new Error("Invalid Ticket");
 
-          // 🚫 Not approved
           if (data.status !== "approved") {
             setStatus("error");
-            setMessage(`❌ Access Denied\n${data.name}`);
-            return;
-          }
-
-          // ⚠️ Already checked in
-          if (data.checked_in) {
+            setMessage(`❌ ENTRY DENIED\n${data.name}`);
+          } else if (data.checked_in) {
             setStatus("error");
-            setMessage(`⚠️ Already Checked In\n${data.name}`);
-            return;
+            setMessage(`⚠️ ALREADY USED\n${data.name}`);
+          } else {
+            await supabase
+              .from("registrations")
+              .update({
+                checked_in: true,
+                checked_in_at: new Date().toISOString(),
+              })
+              .eq("id", id);
+
+            setStatus("success");
+            setMessage(`✅ ENTRY ALLOWED\n${data.name}`);
           }
-
-          // ✅ Valid entry
-          await supabase
-            .from("registrations")
-            .update({
-              checked_in: true,
-              checked_in_at: new Date().toISOString(),
-            })
-            .eq("id", id);
-
-          setStatus("success");
-          setMessage(`✅ Entry Allowed\n${data.name}`);
-
         } catch (err: any) {
           setStatus("error");
           setMessage(err.message || "Invalid QR");
@@ -118,37 +109,36 @@ export default function Scanner() {
       scanLockRef.current = false;
       setStatus("idle");
       setMessage("");
-    }, 3500); // ⏳ better visibility
+    }, 2500);
   };
 
   return (
     <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>🎟️ Entry Scanner</h1>
+      <h1 style={styles.title}>🎟️ ENTRY SCANNER</h1>
 
-        <div style={styles.cameraWrapper}>
-          <video ref={videoRef} style={styles.video} />
-        </div>
-
-        {/* Status */}
-        {status === "idle" && <p style={styles.idle}>Ready to scan</p>}
-        {status === "scanning" && <p style={styles.scan}>Scanning...</p>}
-
-        {/* Result Popup */}
-        {(status === "success" || status === "error") && (
-          <div
-            style={{
-              ...styles.popup,
-              background:
-                status === "success"
-                  ? "linear-gradient(135deg, #22c55e, #16a34a)"
-                  : "linear-gradient(135deg, #ef4444, #dc2626)",
-            }}
-          >
-            <p style={styles.popupText}>{message}</p>
-          </div>
-        )}
+      {/* 🔥 BIG FULL SCREEN SCANNER */}
+      <div style={styles.cameraWrapper}>
+        <video ref={videoRef} style={styles.video} />
       </div>
+
+      {/* STATUS */}
+      {status === "idle" && <p style={styles.idle}>Ready to scan</p>}
+      {status === "scanning" && <p style={styles.scan}>Scanning...</p>}
+
+      {/* 🔥 BIG RESULT POPUP */}
+      {(status === "success" || status === "error") && (
+        <div
+          style={{
+            ...styles.popup,
+            background:
+              status === "success"
+                ? "linear-gradient(135deg, #22c55e, #16a34a)"
+                : "linear-gradient(135deg, #ef4444, #dc2626)",
+          }}
+        >
+          <p style={styles.popupText}>{message}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -158,36 +148,25 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: "100vh",
     background: "#050311",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
+    padding: "10px",
     fontFamily: "Space Grotesk, sans-serif",
-    padding: "16px",
-  },
-
-  card: {
-    width: "100%",
-    maxWidth: 520,
-    padding: 20,
-    borderRadius: 20,
-    background: "rgba(12,6,22,0.9)",
-    backdropFilter: "blur(20px)",
-    border: "1px solid rgba(124,58,237,0.3)",
-    textAlign: "center",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
   },
 
   title: {
-    marginBottom: 16,
-    fontSize: "clamp(18px, 5vw, 24px)",
+    fontSize: "20px",
+    marginBottom: 10,
     fontWeight: 700,
   },
 
+  /* 🔥 THIS IS THE MAIN FIX */
   cameraWrapper: {
-    width: "100%",
-    maxWidth: 420,
-    margin: "0 auto",
+    width: "95vw",          // almost full screen
+    maxWidth: "600px",      // limit for desktop only
     aspectRatio: "1/1",
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: "hidden",
     border: "3px solid #7c3aed",
   },
@@ -200,26 +179,29 @@ const styles: Record<string, React.CSSProperties> = {
 
   idle: {
     color: "#cbd5f5",
-    fontSize: "clamp(14px, 4vw, 18px)",
-    marginTop: 14,
+    fontSize: "18px",
+    marginTop: 12,
   },
 
   scan: {
     color: "#facc15",
-    fontSize: "clamp(14px, 4vw, 18px)",
-    marginTop: 14,
+    fontSize: "18px",
+    marginTop: 12,
     fontWeight: 600,
   },
 
+  /* 🔥 BIG READABLE POPUP */
   popup: {
-    marginTop: 18,
-    padding: "18px 16px",
+    marginTop: 16,
+    padding: "20px",
     borderRadius: 16,
     color: "#fff",
-    fontWeight: 800,
-    fontSize: "clamp(16px, 5vw, 20px)",
-    lineHeight: 1.5,
-    boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+    fontWeight: 900,
+    fontSize: "22px",  // BIG
+    textAlign: "center",
+    width: "95%",
+    maxWidth: 500,
+    boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
   },
 
   popupText: {
