@@ -13,7 +13,7 @@ interface TicketData {
 }
 
 export default function Register() {
-  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", role: "", year: "", semester: "" });
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [ticket, setTicket] = useState<TicketData | null>(null);
@@ -21,7 +21,7 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.role) {
+    if (!form.name || !form.email || !form.role || !form.year || !form.semester) {
       setStatus("error");
       setMessage("⚠️ Please fill all required fields");
       return;
@@ -52,7 +52,7 @@ export default function Register() {
       setTicket(data.ticket);
       setStatus("success");
       setMessage("🎉 Registration successful! Check your email for your QR ticket.");
-      setForm({ name: "", email: "", phone: "", role: "" });
+      setForm({ name: "", email: "", phone: "", role: "", year: "", semester: "" });
     } catch (err: any) {
       setStatus("error");
       setMessage(err.message || "Something went wrong");
@@ -75,7 +75,6 @@ export default function Register() {
 
   return (
     <div style={styles.container}>
-      {/* Decorative blobs */}
       <div style={styles.blob1} />
       <div style={styles.blob2} />
 
@@ -88,11 +87,18 @@ export default function Register() {
           <p style={styles.tagline}>Register now & get your secure QR pass</p>
         </div>
 
+        {/* ── UPDATE #1: Success confirmation screen ── */}
         {status === "success" && ticket ? (
           <div style={styles.successArea}>
-            <div style={{ color: "#22c55e", fontSize: 40, marginBottom: 8 }}>✅</div>
-            <h3 style={{ color: "#fff", marginBottom: 4 }}>You're In!</h3>
-            <p style={{ color: "#a78bfa", marginBottom: 20, fontSize: 14 }}>{message}</p>
+            {/* Big animated checkmark banner */}
+            <div style={styles.successBanner}>
+              <div style={styles.checkCircle}>✅</div>
+              <h2 style={styles.successTitle}>Registration Successful!</h2>
+              <p style={styles.successSub}>
+                You're officially on the list, <strong style={{ color: "#a78bfa" }}>{ticket.name}</strong>!<br />
+                Your QR pass has been sent to <strong style={{ color: "#06b6d4" }}>{ticket.email}</strong>
+              </p>
+            </div>
 
             {/* Ticket Preview */}
             <div ref={ticketRef} style={styles.ticket}>
@@ -113,9 +119,19 @@ export default function Register() {
                   <div style={styles.ticketLabel}>EMAIL</div>
                   <div style={styles.ticketValue}>{ticket.email}</div>
                 </div>
+                {/* UPDATE #4: Show full Ticket ID on the ticket */}
+                <div style={styles.ticketInfo}>
+                  <div style={styles.ticketLabel}>TICKET ID</div>
+                  <div style={{ ...styles.ticketValue, color: "#a78bfa", fontFamily: "monospace", fontSize: 13 }}>
+                    #{ticket.id.slice(0, 8).toUpperCase()}
+                  </div>
+                </div>
                 <div style={styles.ticketQR}>
                   <img src={ticket.qrUrl} alt="QR Code" width={150} height={150} style={{ borderRadius: 8 }} />
                   <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>Scan at entry gate</p>
+                  <p style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
+                    Manual entry ID: <span style={{ color: "#a78bfa", fontFamily: "monospace" }}>#{ticket.id.slice(0, 8).toUpperCase()}</span>
+                  </p>
                 </div>
               </div>
               <div style={styles.ticketFooter}>
@@ -125,7 +141,7 @@ export default function Register() {
 
             <div style={styles.actionRow}>
               <button onClick={downloadPDF} style={styles.downloadBtn}>⬇️ Download PDF Ticket</button>
-              <button onClick={() => { setStatus("idle"); setTicket(null); }} style={styles.againBtn}>Register Another</button>
+              <button onClick={() => { setStatus("idle"); setTicket(null); }} style={styles.againBtn}>Register Another Person</button>
             </div>
           </div>
         ) : (
@@ -161,6 +177,44 @@ export default function Register() {
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
               />
+            </div>
+
+            {/* ── UPDATE #2: Year & Semester fields ── */}
+            <div style={styles.row2col}>
+              <div style={{ ...styles.field, flex: 1 }}>
+                <label style={styles.label}>Year *</label>
+                <select
+                  style={styles.input}
+                  value={form.year}
+                  onChange={(e) => setForm({ ...form, year: e.target.value })}
+                  required
+                >
+                  <option value="">— Year —</option>
+                  <option value="1">1st Year</option>
+                  <option value="2">2nd Year</option>
+                  <option value="3">3rd Year</option>
+                  <option value="4">4th Year</option>
+                </select>
+              </div>
+              <div style={{ ...styles.field, flex: 1 }}>
+                <label style={styles.label}>Semester *</label>
+                <select
+                  style={styles.input}
+                  value={form.semester}
+                  onChange={(e) => setForm({ ...form, semester: e.target.value })}
+                  required
+                >
+                  <option value="">— Sem —</option>
+                  <option value="1">Sem 1</option>
+                  <option value="2">Sem 2</option>
+                  <option value="3">Sem 3</option>
+                  <option value="4">Sem 4</option>
+                  <option value="5">Sem 5</option>
+                  <option value="6">Sem 6</option>
+                  <option value="7">Sem 7</option>
+                  <option value="8">Sem 8</option>
+                </select>
+              </div>
             </div>
 
             <div style={styles.field}>
@@ -243,6 +297,8 @@ const styles: Record<string, React.CSSProperties> = {
   tagline: { color: "#6b7280", fontSize: 13, margin: 0 },
   form: { display: "flex", flexDirection: "column", gap: 0 },
   field: { marginBottom: 16 },
+  // UPDATE #2: Two-column layout for Year & Semester
+  row2col: { display: "flex", gap: 12, marginBottom: 0 },
   label: { display: "block", color: "#a78bfa", fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
   input: {
     width: "100%", padding: "12px 14px", borderRadius: 10,
@@ -262,7 +318,19 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 8px 32px rgba(124,58,237,0.4)",
     fontFamily: "'Space Grotesk', sans-serif", letterSpacing: 0.5,
   },
+  // UPDATE #1: Success banner styles
   successArea: { textAlign: "center" },
+  successBanner: {
+    background: "rgba(34,197,94,0.08)",
+    border: "1px solid rgba(34,197,94,0.3)",
+    borderRadius: 16, padding: "20px 16px", marginBottom: 20,
+  },
+  checkCircle: { fontSize: 44, marginBottom: 10 },
+  successTitle: {
+    color: "#22c55e", fontFamily: "'Orbitron', sans-serif",
+    fontSize: 18, fontWeight: 900, margin: "0 0 8px", letterSpacing: 1,
+  },
+  successSub: { color: "#9ca3af", fontSize: 13, margin: 0, lineHeight: 1.7 },
   ticket: {
     background: "linear-gradient(135deg, #0f0820 0%, #1a0b2e 100%)",
     border: "1px solid rgba(124,58,237,0.5)",

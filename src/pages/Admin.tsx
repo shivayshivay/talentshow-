@@ -6,8 +6,18 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "izeeadmin2025";
+// ── UPDATE #3: 5 admins can login simultaneously with different passwords ──
+// Each entry is { password, label } — label shown in dashboard header
+const ADMIN_PASSWORDS: Record<string, string> = {
+  [import.meta.env.VITE_ADMIN_PASSWORD || "izeeadmin2025"]: "Admin",
+  [import.meta.env.VITE_ADMIN_PASSWORD_2 || "izeeadmin2"]:   "Admin 2",
+  [import.meta.env.VITE_ADMIN_PASSWORD_3 || "izeeadmin3"]:   "Admin 3",
+  [import.meta.env.VITE_ADMIN_PASSWORD_4 || "izeeadmin4"]:   "Admin 4",
+  [import.meta.env.VITE_ADMIN_PASSWORD_5 || "izeeadmin5"]:   "Admin 5",
+};
+
 const SESSION_KEY = "izee_admin_authed";
+const SESSION_LABEL_KEY = "izee_admin_label";
 
 interface Registration {
   id: string;
@@ -15,6 +25,8 @@ interface Registration {
   email: string;
   role: string;
   phone: string | null;
+  year?: string;
+  semester?: string;
   checked_in: boolean;
   checked_in_at: string | null;
   status: "pending" | "approved" | "rejected";
@@ -22,8 +34,9 @@ interface Registration {
 }
 
 export default function Admin() {
-  // ── BUG 1 FIX: Restore auth from sessionStorage so refresh doesn't log out ──
   const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "true");
+  // Store which admin label is logged in for display
+  const [adminLabel, setAdminLabel] = useState(() => sessionStorage.getItem(SESSION_LABEL_KEY) || "Admin");
   const [password, setPassword] = useState("");
   const [pwError, setPwError] = useState("");
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -38,10 +51,13 @@ export default function Admin() {
   const channelRef = useRef<any>(null);
 
   const login = () => {
-    if (password === ADMIN_PASSWORD) {
+    // ── UPDATE #3: Check against all 5 admin passwords ──
+    const matchedLabel = ADMIN_PASSWORDS[password];
+    if (matchedLabel) {
       setAuthed(true);
-      // ── BUG 1 FIX: Persist login across refreshes ──
+      setAdminLabel(matchedLabel);
       sessionStorage.setItem(SESSION_KEY, "true");
+      sessionStorage.setItem(SESSION_LABEL_KEY, matchedLabel);
       setPwError("");
     } else {
       setPwError("❌ Wrong password. Try again.");
@@ -50,7 +66,9 @@ export default function Admin() {
 
   const logout = () => {
     setAuthed(false);
+    setAdminLabel("Admin");
     sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_LABEL_KEY);
   };
 
   const fetchRegistrations = async () => {
@@ -63,22 +81,17 @@ export default function Admin() {
     setLoading(false);
   };
 
-  // ── BUG 2 FIX: Realtime subscription — data updates automatically ──
   useEffect(() => {
     if (!authed) return;
 
     fetchRegistrations();
 
-    // Subscribe to all INSERT / UPDATE / DELETE on registrations table
     const channel = supabase
       .channel("registrations-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "registrations" },
         (payload) => {
-          console.log("Realtime event:", payload.eventType, payload);
-
-          // Flash the live indicator
           setLiveIndicator(true);
           setTimeout(() => setLiveIndicator(false), 1200);
 
@@ -95,9 +108,7 @@ export default function Admin() {
           }
         }
       )
-      .subscribe((status) => {
-        console.log("Realtime channel status:", status);
-      });
+      .subscribe();
 
     channelRef.current = channel;
 
@@ -115,9 +126,7 @@ export default function Admin() {
       .from("registrations")
       .update({ status })
       .eq("id", id);
-    // Realtime will handle the state update — no need to patch manually
     if (error) {
-      // Fallback: patch locally if realtime missed it
       setRegistrations((prev) =>
         prev.map((r) => (r.id === id ? { ...r, status } : r))
       );
@@ -131,7 +140,6 @@ export default function Admin() {
       .from("registrations")
       .delete()
       .eq("id", id);
-    // Realtime handles removal; fallback below
     if (error) {
       setRegistrations((prev) => prev.filter((r) => r.id !== id));
     }
@@ -164,9 +172,9 @@ export default function Admin() {
 
   const downloadCSV = () => {
     const rows = [
-      ["Name", "Email", "Phone", "Role", "Status", "Checked In", "Registered At"],
+      ["Name", "Email", "Phone", "Year", "Semester", "Role", "Status", "Checked In", "Registered At"],
       ...registrations.map((r) => [
-        r.name, r.email, r.phone || "", r.role,
+        r.name, r.email, r.phone || "", r.year || "", r.semester || "", r.role,
         r.status || "pending",
         r.checked_in ? "Yes" : "No",
         new Date(r.created_at).toLocaleString(),
@@ -204,6 +212,10 @@ export default function Admin() {
           <div style={styles.lockIcon}>🔐</div>
           <h2 style={styles.loginTitle}>Admin Access</h2>
           <p style={styles.loginSub}>Izee Got Talent Dashboard</p>
+          {/* UPDATE #3: Subtle hint that multiple admins are supported */}
+          <p style={{ color: "#4b5563", fontSize: 11, marginBottom: 16, margin: "0 0 16px" }}>
+            Up to 5 admins can be logged in simultaneously
+          </p>
           <input
             style={styles.input}
             type="password"
@@ -223,7 +235,6 @@ export default function Admin() {
   // ── Dashboard ────────────────────────────────────────────────────────────
   return (
     <div style={styles.pageContainer}>
-      {/* Delete confirmation modal */}
       {confirmDelete && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
@@ -255,6 +266,10 @@ export default function Admin() {
 
       <div style={styles.sidebar}>
         <div style={styles.sidebarTitle}>🎤 Izee Admin</div>
+        {/* UPDATE #3: Show which admin is logged in */}
+        <div style={{ color: "#6b7280", fontSize: 11, marginBottom: 20, padding: "0 12px" }}>
+          Logged in as <span style={{ color: "#a78bfa", fontWeight: 700 }}>{adminLabel}</span>
+        </div>
         <nav style={styles.nav}>
           <a href="/admin" style={styles.navItemActive}>📊 Dashboard</a>
           <a href="/scanner" style={styles.navItem}>📷 QR Scanner</a>
@@ -308,11 +323,7 @@ export default function Admin() {
             <option value="not_checked">⏳ Not Checked</option>
           </select>
           <button onClick={downloadCSV} style={styles.csvBtn}>⬇️ CSV</button>
-          {/* Manual refresh still available as backup */}
-          <button onClick={fetchRegistrations} style={styles.refreshBtn} title="Manual refresh">
-            🔄
-          </button>
-          {/* BUG 2 FIX: Live indicator dot — pulses green when realtime fires */}
+          <button onClick={fetchRegistrations} style={styles.refreshBtn} title="Manual refresh">🔄</button>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{
               width: 8, height: 8, borderRadius: "50%",
@@ -332,14 +343,14 @@ export default function Admin() {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  {["#", "Name", "Email", "Phone", "Role", "Approval", "Check-In", "Registered", "Actions"].map((h) => (
+                  {["#", "Name", "Email", "Phone", "Year", "Sem", "Role", "Approval", "Check-In", "Registered", "Actions"].map((h) => (
                     <th key={h} style={styles.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9} style={styles.emptyCell}>No registrations found</td></tr>
+                  <tr><td colSpan={11} style={styles.emptyCell}>No registrations found</td></tr>
                 ) : filtered.map((r, i) => (
                   <tr
                     key={r.id}
@@ -352,6 +363,9 @@ export default function Admin() {
                     <td style={{ ...styles.td, fontWeight: 600, color: "#e5e7eb", whiteSpace: "nowrap" }}>{r.name}</td>
                     <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.email}</td>
                     <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.phone || "—"}</td>
+                    {/* UPDATE #2: Year & Semester columns */}
+                    <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.year ? `Y${r.year}` : "—"}</td>
+                    <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.semester ? `S${r.semester}` : "—"}</td>
                     <td style={styles.td}>
                       <span style={{
                         padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700,
@@ -427,14 +441,14 @@ const styles: Record<string, React.CSSProperties> = {
   loginCard: { width: "100%", maxWidth: 380, background: "rgba(18,9,31,0.95)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 20, padding: "40px 32px", textAlign: "center", zIndex: 1, position: "relative" },
   lockIcon: { fontSize: 48, marginBottom: 12 },
   loginTitle: { fontFamily: "'Orbitron', sans-serif", fontSize: 22, fontWeight: 900, color: "#fff", margin: "0 0 8px" },
-  loginSub: { color: "#6b7280", fontSize: 13, marginBottom: 24 },
+  loginSub: { color: "#6b7280", fontSize: 13, marginBottom: 8 },
   input: { width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(124,58,237,0.3)", background: "rgba(15,8,32,0.8)", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "'Space Grotesk', sans-serif", marginBottom: 12 },
   errorBox: { background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#f87171", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 12, textAlign: "left" },
   loginBtn: { width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #7c3aed, #06b6d4)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 15, fontFamily: "'Space Grotesk', sans-serif", marginBottom: 16 },
   backLink: { color: "#7c3aed", fontSize: 13, textDecoration: "none" },
   pageContainer: { display: "flex", minHeight: "100vh", background: "#050311", fontFamily: "'Space Grotesk', sans-serif", color: "#fff" },
   sidebar: { width: 210, background: "rgba(18,9,31,0.98)", borderRight: "1px solid rgba(124,58,237,0.2)", padding: "28px 16px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh" },
-  sidebarTitle: { fontFamily: "'Orbitron', sans-serif", fontSize: 13, fontWeight: 900, color: "#a78bfa", marginBottom: 28, letterSpacing: 1 },
+  sidebarTitle: { fontFamily: "'Orbitron', sans-serif", fontSize: 13, fontWeight: 900, color: "#a78bfa", marginBottom: 8, letterSpacing: 1 },
   nav: { display: "flex", flexDirection: "column", gap: 4, flex: 1 },
   navItem: { color: "#9ca3af", textDecoration: "none", padding: "10px 12px", borderRadius: 8, fontSize: 14, fontWeight: 500 },
   navItemActive: { color: "#a78bfa", textDecoration: "none", padding: "10px 12px", borderRadius: 8, fontSize: 14, fontWeight: 700, background: "rgba(124,58,237,0.15)" },
