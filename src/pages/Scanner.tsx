@@ -88,7 +88,7 @@ export default function Scanner() {
   useEffect(() => {
     if (!scanning) return;
     const initScanner = async () => {
-      const { Html5QrcodeScanner } = await import("html5-qrcode");
+      const { Html5QrcodeScanner } = window as any;
       const scanner = new Html5QrcodeScanner(
         "qr-reader",
         { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
