@@ -125,7 +125,11 @@ export default function Scanner() {
         }
       }
       if (cancelled) return;
-      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 }, false);
+      const scanner = new Html5QrcodeScanner(
+        "qr-reader",
+        { fps: 10, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
+        false
+      );
       scanner.render((text: string) => handleScan(text), () => {});
       scannerRef.current = scanner;
     };
@@ -167,49 +171,62 @@ export default function Scanner() {
           <p style={styles.sub}>Izee Got Talent — Gate Verification</p>
         </div>
 
-        {scanning ? (
-          <div>
-            <div id="qr-reader" style={styles.scannerBox} />
-            <button onClick={stopScanner} style={styles.stopBtn}>⛔ Stop Scanner</button>
-          </div>
-        ) : (!result && !loading && (
-          <button onClick={startScanner} style={styles.startBtn}>📸 Start Camera Scanner</button>
-        ))}
-
-        {loading && (
-          <div style={styles.loadingBox}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>⏳</div>
-            <div style={{ color: "#a78bfa" }}>Verifying ticket...</div>
-          </div>
-        )}
-
-        {result && (() => {
-          const cfg = resultConfig[result.status];
-          return (
-            <div style={{ ...styles.resultBox, background: cfg.bg, border: `2px solid ${cfg.border}` }}>
-              <div style={{ fontSize: 48, marginBottom: 8 }}>{cfg.icon}</div>
-              <div style={{ ...styles.resultStatus, color: cfg.color }}>{cfg.label}</div>
-              {result.name && (
-                <div style={styles.resultDetails}>
-                  <div><b style={{ color: "#a78bfa" }}>{result.name}</b></div>
-                  <div style={{ color: "#9ca3af", fontSize: 12 }}>{result.email}</div>
-                  <div style={{ marginTop: 4 }}>
-                    <span style={{ padding: "2px 10px", borderRadius: 20, background: "rgba(124,58,237,0.3)", color: "#a78bfa", fontSize: 11, fontWeight: 700 }}>
-                      {result.role?.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 8 }}>{result.message}</div>
+        {/*
+          ── BUG 3 FIX: Page shaking ──────────────────────────────────────────
+          Wrap the scan area (camera / result / next-button) in a container
+          with a fixed minHeight. This means the layout HEIGHT never changes
+          when the camera stops and the result card appears — nothing jumps.
+          320px comfortably fits both the start button and the result card.
+        */}
+        <div style={styles.scanArea}>
+          {scanning ? (
+            <div>
+              <div id="qr-reader" style={styles.scannerBox} />
+              <button onClick={stopScanner} style={styles.stopBtn}>⛔ Stop Scanner</button>
             </div>
-          );
-        })()}
-
-        {result && (
-          <button onClick={() => { setResult(null); startScanner(); }} style={styles.nextBtn}>
-            📸 Scan Next Ticket
-          </button>
-        )}
+          ) : loading ? (
+            <div style={styles.loadingBox}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>⏳</div>
+              <div style={{ color: "#a78bfa" }}>Verifying ticket...</div>
+            </div>
+          ) : result ? (
+            (() => {
+              const cfg = resultConfig[result.status];
+              return (
+                <>
+                  <div style={{ ...styles.resultBox, background: cfg.bg, border: `2px solid ${cfg.border}` }}>
+                    <div style={{ fontSize: 48, marginBottom: 8 }}>{cfg.icon}</div>
+                    <div style={{ ...styles.resultStatus, color: cfg.color }}>{cfg.label}</div>
+                    {result.name && (
+                      <div style={styles.resultDetails}>
+                        <div><b style={{ color: "#a78bfa" }}>{result.name}</b></div>
+                        <div style={{ color: "#9ca3af", fontSize: 12 }}>{result.email}</div>
+                        <div style={{ marginTop: 4 }}>
+                          <span style={{ padding: "2px 10px", borderRadius: 20, background: "rgba(124,58,237,0.3)", color: "#a78bfa", fontSize: 11, fontWeight: 700 }}>
+                            {result.role?.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 8 }}>{result.message}</div>
+                  </div>
+                  <button
+                    onClick={() => { setResult(null); startScanner(); }}
+                    style={styles.nextBtn}
+                  >
+                    📸 Scan Next Ticket
+                  </button>
+                </>
+              );
+            })()
+          ) : (
+            // Default idle state — start button
+            <button onClick={startScanner} style={styles.startBtn}>
+              📸 Start Camera Scanner
+            </button>
+          )}
+        </div>
+        {/* ── END BUG 3 FIX ─────────────────────────────────────────────── */}
 
         <div style={styles.divider}><span style={styles.dividerText}>or verify manually</span></div>
 
@@ -241,14 +258,22 @@ const styles: Record<string, React.CSSProperties> = {
   badge: { display: "inline-block", background: "rgba(124,58,237,0.2)", border: "1px solid rgba(124,58,237,0.5)", color: "#a78bfa", padding: "4px 14px", borderRadius: 20, fontSize: 11, letterSpacing: 2, fontWeight: 700, marginBottom: 10, textTransform: "uppercase" },
   title: { fontFamily: "'Orbitron', sans-serif", fontSize: 22, fontWeight: 900, color: "#fff", margin: "0 0 4px" },
   sub: { color: "#6b7280", fontSize: 13, margin: 0 },
+  // BUG 3 FIX: This is the key style — reserves height so nothing shifts
+  scanArea: {
+    minHeight: 320,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
   scannerBox: { borderRadius: 16, overflow: "hidden", marginBottom: 16, background: "#000" },
-  startBtn: { width: "100%", padding: "16px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #7c3aed, #06b6d4)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 16, fontFamily: "'Space Grotesk', sans-serif", marginBottom: 16, boxShadow: "0 8px 32px rgba(124,58,237,0.4)" },
+  startBtn: { width: "100%", padding: "16px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #7c3aed, #06b6d4)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 16, fontFamily: "'Space Grotesk', sans-serif", marginBottom: 0, boxShadow: "0 8px 32px rgba(124,58,237,0.4)" },
   stopBtn: { width: "100%", padding: "12px", borderRadius: 10, border: "1px solid rgba(239,68,68,0.4)", background: "transparent", color: "#f87171", cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 16 },
   loadingBox: { textAlign: "center", padding: "24px 0" },
   resultBox: { borderRadius: 16, padding: "24px 20px", textAlign: "center", marginBottom: 16 },
   resultStatus: { fontSize: 20, fontWeight: 800, letterSpacing: 1, marginBottom: 12 },
   resultDetails: { background: "rgba(255,255,255,0.06)", borderRadius: 10, padding: "12px", marginTop: 8, marginBottom: 4 },
-  nextBtn: { width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #7c3aed, #06b6d4)", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 20 },
+  nextBtn: { width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #7c3aed, #06b6d4)", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, marginBottom: 0 },
   divider: { borderTop: "1px solid rgba(255,255,255,0.08)", position: "relative", textAlign: "center", margin: "20px 0" },
   dividerText: { position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)", background: "rgba(18,9,31,1)", padding: "0 12px", color: "#6b7280", fontSize: 12 },
   manualRow: { display: "flex", gap: 8, marginBottom: 20 },

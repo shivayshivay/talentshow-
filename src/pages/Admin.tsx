@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -7,6 +7,7 @@ const supabase = createClient(
 );
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "izeeadmin2025";
+const SESSION_KEY = "izee_admin_authed";
 
 interface Registration {
   id: string;
@@ -21,7 +22,8 @@ interface Registration {
 }
 
 export default function Admin() {
-  const [authed, setAuthed] = useState(false);
+  // ── BUG 1 FIX: Restore auth from sessionStorage so refresh doesn't log out ──
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "true");
   const [password, setPassword] = useState("");
   const [pwError, setPwError] = useState("");
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -32,14 +34,23 @@ export default function Admin() {
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [liveIndicator, setLiveIndicator] = useState(false);
+  const channelRef = useRef<any>(null);
 
   const login = () => {
     if (password === ADMIN_PASSWORD) {
       setAuthed(true);
+      // ── BUG 1 FIX: Persist login across refreshes ──
+      sessionStorage.setItem(SESSION_KEY, "true");
       setPwError("");
     } else {
       setPwError("❌ Wrong password. Try again.");
     }
+  };
+
+  const logout = () => {
+    setAuthed(false);
+    sessionStorage.removeItem(SESSION_KEY);
   };
 
   const fetchRegistrations = async () => {
@@ -52,8 +63,50 @@ export default function Admin() {
     setLoading(false);
   };
 
+  // ── BUG 2 FIX: Realtime subscription — data updates automatically ──
   useEffect(() => {
-    if (authed) fetchRegistrations();
+    if (!authed) return;
+
+    fetchRegistrations();
+
+    // Subscribe to all INSERT / UPDATE / DELETE on registrations table
+    const channel = supabase
+      .channel("registrations-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "registrations" },
+        (payload) => {
+          console.log("Realtime event:", payload.eventType, payload);
+
+          // Flash the live indicator
+          setLiveIndicator(true);
+          setTimeout(() => setLiveIndicator(false), 1200);
+
+          if (payload.eventType === "INSERT") {
+            setRegistrations((prev) => [payload.new as Registration, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            setRegistrations((prev) =>
+              prev.map((r) => (r.id === (payload.new as Registration).id ? (payload.new as Registration) : r))
+            );
+          } else if (payload.eventType === "DELETE") {
+            setRegistrations((prev) =>
+              prev.filter((r) => r.id !== (payload.old as Registration).id)
+            );
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log("Realtime channel status:", status);
+      });
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
   }, [authed]);
 
   const updateStatus = async (id: string, status: "approved" | "rejected") => {
@@ -62,7 +115,9 @@ export default function Admin() {
       .from("registrations")
       .update({ status })
       .eq("id", id);
-    if (!error) {
+    // Realtime will handle the state update — no need to patch manually
+    if (error) {
+      // Fallback: patch locally if realtime missed it
       setRegistrations((prev) =>
         prev.map((r) => (r.id === id ? { ...r, status } : r))
       );
@@ -76,7 +131,8 @@ export default function Admin() {
       .from("registrations")
       .delete()
       .eq("id", id);
-    if (!error) {
+    // Realtime handles removal; fallback below
+    if (error) {
       setRegistrations((prev) => prev.filter((r) => r.id !== id));
     }
     setConfirmDelete(null);
@@ -204,7 +260,7 @@ export default function Admin() {
           <a href="/scanner" style={styles.navItem}>📷 QR Scanner</a>
           <a href="/" style={styles.navItem}>🏠 Registration</a>
         </nav>
-        <button onClick={() => setAuthed(false)} style={styles.logoutBtn}>🚪 Logout</button>
+        <button onClick={logout} style={styles.logoutBtn}>🚪 Logout</button>
       </div>
 
       <div style={styles.main}>
@@ -252,7 +308,20 @@ export default function Admin() {
             <option value="not_checked">⏳ Not Checked</option>
           </select>
           <button onClick={downloadCSV} style={styles.csvBtn}>⬇️ CSV</button>
-          <button onClick={fetchRegistrations} style={styles.refreshBtn}>🔄</button>
+          {/* Manual refresh still available as backup */}
+          <button onClick={fetchRegistrations} style={styles.refreshBtn} title="Manual refresh">
+            🔄
+          </button>
+          {/* BUG 2 FIX: Live indicator dot — pulses green when realtime fires */}
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: liveIndicator ? "#22c55e" : "#374151",
+              boxShadow: liveIndicator ? "0 0 8px #22c55e" : "none",
+              transition: "all 0.3s ease",
+            }} />
+            <span style={{ color: "#6b7280", fontSize: 11 }}>LIVE</span>
+          </div>
         </div>
 
         {/* Table */}
