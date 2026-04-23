@@ -1,80 +1,140 @@
-// ============================================================
-// Supabase Edge Function — Self-Registration + QR Email
-// Deploy: supabase functions deploy register
-// POST /functions/v1/register
-//   Body: { name, email, role, phone }
-// ============================================================
-
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+const BREVO_API_KEY = Deno.env.get("BREVO_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-// Set this secret: supabase secrets set SITE_URL=https://your-site.netlify.app
-const SITE_URL = Deno.env.get("SITE_URL") || "https://your-site.netlify.app";
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SITE_URL = Deno.env.get("SITE_URL")!;
 
-const EVENT = {
-  name: "Izee Got Talent + DJ Night",
-  date: "Friday, 24 April 2026",
-  time: "2:30 PM",
-  venue: "Main Auditorium, Izee College",
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Content-Type": "application/json",
 };
 
-// QR encodes a real URL — scanners open the verify page directly
-function buildVerifyURL(id: string): string {
-  return `${SITE_URL}/verify?id=${id}`;
-}
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
-// QR image via api.qrserver.com — reliable, no CORS issues in email
-function getQRImageURL(verifyURL: string): string {
-  const encoded = encodeURIComponent(verifyURL);
-  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encoded}&bgcolor=ffffff&color=000000&margin=10&ecc=M`;
-}
+  try {
+    const { name, email, role, phone } = await req.json();
 
-function buildEmailHTML(reg: { id: string; name: string; role: string }): string {
-  const roleLabel = reg.role === "participant" ? "🎤 Participant" : "🎟️ Audience";
-  const roleColor = reg.role === "participant" ? "#a855f7" : "#06b6d4";
-  const verifyURL = buildVerifyURL(reg.id);
-  const qrImageURL = getQRImageURL(verifyURL);
+    if (!name || !email || !role) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Name, email and role are required" }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
-  return `<!DOCTYPE html>
-<html lang="en">
+    if (!["audience", "participant"].includes(role)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Invalid role selected" }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    // ✅ Duplicate email check
+    const { data: existing } = await supabase
+      .from("registrations")
+      .select("id")
+      .eq("email", email.toLowerCase().trim())
+      .maybeSingle();
+
+    if (existing) {
+      return new Response(
+        JSON.stringify({ success: false, error: "This email is already registered. Each email can only register once." }),
+        { status: 409, headers: corsHeaders }
+      );
+    }
+
+    // ✅ Insert into DB
+    const { data, error } = await supabase
+      .from("registrations")
+      .insert([{
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        role,
+        phone: phone?.trim() || null,
+      }])
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    const verifyUrl = `${SITE_URL}/verify?id=${data.id}`;
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(verifyUrl)}&color=000000&bgcolor=ffffff&margin=10`;
+    const ticketId = data.id.slice(0, 8).toUpperCase();
+    const roleLabel = role === "participant" ? "🎭 Participant" : "👥 Audience";
+
+    // ✅ Beautiful HTML email
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Your Ticket — ${EVENT.name}</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Izee Got Talent Ticket</title>
 </head>
-<body style="margin:0;padding:0;background:#0a0612;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0612;padding:40px 20px;">
+<body style="margin:0;padding:0;background:#050311;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#050311;padding:40px 20px;">
     <tr>
       <td align="center">
-        <table width="520" cellpadding="0" cellspacing="0" style="background:#12091f;border-radius:16px;overflow:hidden;border:1px solid #2d1b4e;">
-
-          <!-- Header -->
+        <table width="100%" style="max-width:520px;background:linear-gradient(135deg,#0f0820 0%,#12092a 100%);border-radius:20px;overflow:hidden;border:1px solid rgba(124,58,237,0.4);" cellpadding="0" cellspacing="0">
+          
+          <!-- Header Banner -->
           <tr>
-            <td style="background:linear-gradient(135deg,#1a0533 0%,#0d0220 100%);padding:36px 40px 28px;text-align:center;border-bottom:1px solid #2d1b4e;">
-              <div style="font-size:11px;letter-spacing:4px;color:#a855f7;text-transform:uppercase;margin-bottom:10px;">Official Entry Pass</div>
-              <div style="font-size:26px;font-weight:800;color:#ffffff;line-height:1.2;margin-bottom:6px;">${EVENT.name}</div>
-              <div style="width:48px;height:3px;background:linear-gradient(90deg,#a855f7,#06b6d4);border-radius:2px;margin:14px auto 0;"></div>
+            <td style="background:linear-gradient(135deg,#7c3aed 0%,#06b6d4 100%);padding:28px 32px;text-align:center;">
+              <div style="font-size:36px;margin-bottom:8px;">🎤</div>
+              <h1 style="margin:0;color:#fff;font-size:26px;font-weight:900;letter-spacing:1px;">Izee Got Talent</h1>
+              <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">+ DJ Night Extravaganza</p>
             </td>
           </tr>
 
-          <!-- Event Info -->
+          <!-- Greeting -->
           <tr>
-            <td style="padding:24px 40px 0;">
-              <table width="100%" cellpadding="0" cellspacing="0">
+            <td style="padding:28px 32px 12px;">
+              <h2 style="color:#e5e7eb;font-size:20px;margin:0 0 8px;">Hey ${name}! 🎉</h2>
+              <p style="color:#9ca3af;font-size:14px;margin:0;line-height:1.6;">
+                You're officially on the list. Show the QR code below at the entry gate to get in.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Ticket Card -->
+          <tr>
+            <td style="padding:12px 32px 12px;">
+              <table width="100%" style="background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.4);border-radius:16px;overflow:hidden;" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="padding:0 8px 0 0;width:50%;">
-                    <div style="background:#1a0d2e;border-radius:10px;padding:14px 16px;border:1px solid #2d1b4e;">
-                      <div style="font-size:10px;letter-spacing:2px;color:#7c3aed;text-transform:uppercase;margin-bottom:4px;">Date &amp; Time</div>
-                      <div style="color:#e2d9f3;font-size:13px;font-weight:600;">${EVENT.date}</div>
-                      <div style="color:#a78bca;font-size:12px;margin-top:2px;">${EVENT.time}</div>
-                    </div>
-                  </td>
-                  <td style="padding:0 0 0 8px;width:50%;">
-                    <div style="background:#1a0d2e;border-radius:10px;padding:14px 16px;border:1px solid #2d1b4e;">
-                      <div style="font-size:10px;letter-spacing:2px;color:#7c3aed;text-transform:uppercase;margin-bottom:4px;">Venue</div>
-                      <div style="color:#e2d9f3;font-size:13px;font-weight:600;">${EVENT.venue}</div>
+                  <td style="padding:20px 20px 16px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="width:50%;padding-bottom:14px;">
+                          <div style="color:#6b7280;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;">NAME</div>
+                          <div style="color:#e5e7eb;font-size:15px;font-weight:700;">${name}</div>
+                        </td>
+                        <td style="width:50%;padding-bottom:14px;text-align:right;">
+                          <span style="background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:700;">${roleLabel}</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding-bottom:14px;">
+                          <div style="color:#6b7280;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;">EMAIL</div>
+                          <div style="color:#9ca3af;font-size:13px;">${email}</div>
+                        </td>
+                        <td style="text-align:right;padding-bottom:14px;">
+                          <div style="color:#6b7280;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;">TICKET ID</div>
+                          <div style="color:#a78bfa;font-size:13px;font-weight:700;">#${ticketId}</div>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- Dashed divider -->
+                    <div style="border-top:1px dashed rgba(124,58,237,0.4);margin:4px 0 16px;"></div>
+                    <!-- QR Code -->
+                    <div style="text-align:center;">
+                      <img src="${qrUrl}" width="180" height="180" alt="Entry QR Code" style="border-radius:12px;border:4px solid rgba(124,58,237,0.4);display:block;margin:0 auto;" />
+                      <p style="color:#6b7280;font-size:11px;margin:10px 0 0;">Scan this QR at the entry gate</p>
                     </div>
                   </td>
                 </tr>
@@ -82,56 +142,37 @@ function buildEmailHTML(reg: { id: string; name: string; role: string }): string
             </td>
           </tr>
 
-          <!-- Attendee -->
+          <!-- CTA Button -->
           <tr>
-            <td style="padding:20px 40px 0;">
-              <div style="background:#1a0d2e;border-radius:10px;padding:16px 20px;border:1px solid #2d1b4e;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td>
-                      <div style="font-size:10px;letter-spacing:2px;color:#7c3aed;text-transform:uppercase;margin-bottom:6px;">Attendee</div>
-                      <div style="color:#ffffff;font-size:18px;font-weight:700;">${reg.name}</div>
-                    </td>
-                    <td align="right" style="vertical-align:middle;">
-                      <span style="background:${roleColor}22;color:${roleColor};border:1px solid ${roleColor}55;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;">${roleLabel}</span>
-                    </td>
-                  </tr>
-                </table>
-              </div>
+            <td style="padding:16px 32px 20px;text-align:center;">
+              <a href="${verifyUrl}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;text-decoration:none;padding:13px 32px;border-radius:10px;font-weight:700;font-size:14px;">
+                🎟️ View My Ticket Online
+              </a>
             </td>
           </tr>
 
-          <!-- QR Code -->
+          <!-- Info -->
           <tr>
-            <td style="padding:28px 40px;text-align:center;">
-              <div style="background:#ffffff;display:inline-block;border-radius:12px;padding:12px;box-shadow:0 0 40px #a855f733;">
-                <img src="${qrImageURL}" width="200" height="200" alt="Entry QR Code" style="display:block;border-radius:6px;"/>
-              </div>
-              <div style="color:#7c6a9a;font-size:11px;margin-top:12px;letter-spacing:1px;">Scan this QR at the entry gate</div>
-              <div style="color:#4a3d6b;font-size:10px;margin-top:4px;font-family:monospace;">${reg.id}</div>
-              <div style="margin-top:16px;">
-                <a href="${verifyURL}" style="background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#ffffff;text-decoration:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;display:inline-block;">
-                  🔗 Open Ticket Verification Page
-                </a>
-              </div>
-            </td>
-          </tr>
-
-          <!-- Divider -->
-          <tr>
-            <td style="padding:0 40px;">
-              <div style="border-top:1px dashed #2d1b4e;"></div>
+            <td style="padding:0 32px 28px;">
+              <table width="100%" style="background:rgba(255,255,255,0.04);border-radius:12px;padding:16px;" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:6px 0;color:#9ca3af;font-size:12px;">📍 <strong style="color:#e5e7eb;">Venue:</strong> College Auditorium</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;color:#9ca3af;font-size:12px;">📅 <strong style="color:#e5e7eb;">Date:</strong> As announced by organizers</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;color:#9ca3af;font-size:12px;">⏰ <strong style="color:#e5e7eb;">Tip:</strong> Arrive 15 mins early for smooth entry</td>
+                </tr>
+              </table>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="padding:20px 40px 32px;text-align:center;">
-              <div style="color:#4a3d6b;font-size:11px;line-height:1.6;">
-                Please carry this ticket (digital or printed) to the event.<br/>
-                This pass is non-transferable and unique to you.
-              </div>
-              <div style="margin-top:14px;font-size:10px;color:#2d1b4e;letter-spacing:2px;text-transform:uppercase;">Izee Got Talent · 2026</div>
+            <td style="background:rgba(0,0,0,0.3);padding:16px 32px;text-align:center;">
+              <p style="color:#4b5563;font-size:11px;margin:0;">This is an automated ticket confirmation. Do not reply to this email.</p>
+              <p style="color:#4b5563;font-size:11px;margin:4px 0 0;">© 2025 Izee Got Talent — All rights reserved</p>
             </td>
           </tr>
 
@@ -141,105 +182,50 @@ function buildEmailHTML(reg: { id: string; name: string; role: string }): string
   </table>
 </body>
 </html>`;
-}
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
-  try {
-    const body = await req.json();
-    const { name, email, role, phone } = body;
-
-    // Validate
-    if (!name || !email || !role) {
-      return new Response(
-        JSON.stringify({ success: false, error: "name, email, and role are required." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    if (!["audience", "participant"].includes(role)) {
-      return new Response(
-        JSON.stringify({ success: false, error: "role must be 'audience' or 'participant'." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    // Check for duplicate email
-    const { data: existing } = await supabase
-      .from("registrations")
-      .select("id")
-      .eq("email", email.toLowerCase().trim())
-      .maybeSingle();
-
-    if (existing) {
-      return new Response(
-        JSON.stringify({ success: false, error: "This email is already registered." }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Insert registration
-    const { data: reg, error: insertError } = await supabase
-      .from("registrations")
-      .insert({
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
-        role,
-        phone: phone?.trim() || null,
-      })
-      .select()
-      .single();
-
-    if (insertError) throw new Error(`DB insert error: ${insertError.message}`);
-
-    // Send email with QR ticket
-    const emailRes = await fetch("https://api.resend.com/emails", {
+    // ✅ Send via Brevo
+    const emailRes = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
+        "api-key": BREVO_API_KEY,
       },
       body: JSON.stringify({
-        from: "Izee Got Talent <onboarding@resend.dev>",
-        to: [reg.email],
-        subject: `🎟️ Your Entry Pass — ${EVENT.name}`,
-        html: buildEmailHTML({ id: reg.id, name: reg.name, role: reg.role }),
+        sender: { name: "Izee Got Talent", email: "shivay3991@gmail.com" },
+        to: [{ email, name }],
+        subject: `🎟️ Your Entry Pass — Izee Got Talent #${ticketId}`,
+        htmlContent,
       }),
     });
 
     if (!emailRes.ok) {
       const errText = await emailRes.text();
-      console.error("Resend error:", errText);
-      // Still return success — user is registered, email failed
+      console.error("Brevo error:", errText);
+      // Still return success with ticket data even if email fails
       return new Response(
         JSON.stringify({
           success: true,
-          id: reg.id,
-          warning: "Registered successfully but email delivery failed. Contact support.",
+          warning: "Registered but email failed to send. Check Brevo sender verification.",
+          ticket: { id: data.id, name, email, role, qrUrl, verifyUrl },
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: corsHeaders }
       );
     }
 
     return new Response(
-      JSON.stringify({ success: true, id: reg.id }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        success: true,
+        message: "Registered successfully! Check your email.",
+        ticket: { id: data.id, name, email, role, qrUrl, verifyUrl },
+      }),
+      { headers: corsHeaders }
     );
 
-  } catch (err) {
-    console.error(err);
+  } catch (err: any) {
+    console.error("Server error:", err);
     return new Response(
-      JSON.stringify({ success: false, error: err.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ success: false, error: err.message || "Internal server error" }),
+      { status: 500, headers: corsHeaders }
     );
   }
 });
