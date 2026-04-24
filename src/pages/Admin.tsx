@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -6,17 +6,17 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// ── UPDATE #3: 5 admins can login simultaneously with different passwords ──
-// Each entry is { password, label } — label shown in dashboard header
+// ── UPDATE #3: 5 admins — set all 5 passwords in your .env ──
+// VITE_ADMIN_PASSWORD, VITE_ADMIN_PASSWORD_2 … VITE_ADMIN_PASSWORD_5
 const ADMIN_PASSWORDS: Record<string, string> = {
-  [import.meta.env.VITE_ADMIN_PASSWORD || "izeeadmin2025"]: "Admin",
+  [import.meta.env.VITE_ADMIN_PASSWORD  || "izeeadmin2025"]: "Admin 1",
   [import.meta.env.VITE_ADMIN_PASSWORD_2 || "izeeadmin2"]:   "Admin 2",
   [import.meta.env.VITE_ADMIN_PASSWORD_3 || "izeeadmin3"]:   "Admin 3",
   [import.meta.env.VITE_ADMIN_PASSWORD_4 || "izeeadmin4"]:   "Admin 4",
   [import.meta.env.VITE_ADMIN_PASSWORD_5 || "izeeadmin5"]:   "Admin 5",
 };
 
-const SESSION_KEY = "izee_admin_authed";
+const SESSION_KEY       = "izee_admin_authed";
 const SESSION_LABEL_KEY = "izee_admin_label";
 
 interface Registration {
@@ -25,8 +25,9 @@ interface Registration {
   email: string;
   role: string;
   phone: string | null;
-  year?: string;
-  semester?: string;
+  uucms: string | null;
+  year: string | null;
+  semester: string | null;
   checked_in: boolean;
   checked_in_at: string | null;
   status: "pending" | "approved" | "rejected";
@@ -34,30 +35,30 @@ interface Registration {
 }
 
 export default function Admin() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === "true");
-  // Store which admin label is logged in for display
-  const [adminLabel, setAdminLabel] = useState(() => sessionStorage.getItem(SESSION_LABEL_KEY) || "Admin");
-  const [password, setPassword] = useState("");
-  const [pwError, setPwError] = useState("");
+  const [authed, setAuthed]           = useState(() => sessionStorage.getItem(SESSION_KEY) === "true");
+  const [adminLabel, setAdminLabel]   = useState(() => sessionStorage.getItem(SESSION_LABEL_KEY) || "Admin");
+  const [password, setPassword]       = useState("");
+  const [pwError, setPwError]         = useState("");
   const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "audience" | "participant">("all");
+  const [loading, setLoading]         = useState(false);
+  const [search, setSearch]           = useState("");
+  const [filter, setFilter]           = useState<"all" | "audience" | "participant">("all");
   const [checkedFilter, setCheckedFilter] = useState<"all" | "checked" | "not_checked">("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [statusFilter, setStatusFilter]   = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [liveIndicator, setLiveIndicator] = useState(false);
+  const [lastUpdate, setLastUpdate]   = useState<Date | null>(null);
   const channelRef = useRef<any>(null);
 
+  // ── LOGIN ──────────────────────────────────────────────────────────────
   const login = () => {
-    // ── UPDATE #3: Check against all 5 admin passwords ──
-    const matchedLabel = ADMIN_PASSWORDS[password];
-    if (matchedLabel) {
+    const label = ADMIN_PASSWORDS[password];
+    if (label) {
       setAuthed(true);
-      setAdminLabel(matchedLabel);
+      setAdminLabel(label);
       sessionStorage.setItem(SESSION_KEY, "true");
-      sessionStorage.setItem(SESSION_LABEL_KEY, matchedLabel);
+      sessionStorage.setItem(SESSION_LABEL_KEY, label);
       setPwError("");
     } else {
       setPwError("❌ Wrong password. Try again.");
@@ -71,35 +72,50 @@ export default function Admin() {
     sessionStorage.removeItem(SESSION_LABEL_KEY);
   };
 
-  const fetchRegistrations = async () => {
+  // ── FETCH ALL ──────────────────────────────────────────────────────────
+  const fetchRegistrations = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("registrations")
       .select("*")
       .order("created_at", { ascending: false });
-    if (!error && data) setRegistrations(data);
+    if (!error && data) {
+      setRegistrations(data);
+      setLastUpdate(new Date());
+    }
     setLoading(false);
-  };
+  }, []);
 
+  // ── REALTIME — instant updates ─────────────────────────────────────────
   useEffect(() => {
     if (!authed) return;
 
     fetchRegistrations();
 
     const channel = supabase
-      .channel("registrations-realtime")
+      .channel("admin-registrations", {
+        config: { broadcast: { self: true } },
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "registrations" },
         (payload) => {
           setLiveIndicator(true);
+          setLastUpdate(new Date());
           setTimeout(() => setLiveIndicator(false), 1200);
 
           if (payload.eventType === "INSERT") {
-            setRegistrations((prev) => [payload.new as Registration, ...prev]);
+            setRegistrations((prev) => {
+              if (prev.find((r) => r.id === (payload.new as Registration).id)) return prev;
+              return [payload.new as Registration, ...prev];
+            });
           } else if (payload.eventType === "UPDATE") {
             setRegistrations((prev) =>
-              prev.map((r) => (r.id === (payload.new as Registration).id ? (payload.new as Registration) : r))
+              prev.map((r) =>
+                r.id === (payload.new as Registration).id
+                  ? (payload.new as Registration)
+                  : r
+              )
             );
           } else if (payload.eventType === "DELETE") {
             setRegistrations((prev) =>
@@ -108,7 +124,12 @@ export default function Admin() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Realtime status:", status);
+        if (status === "SUBSCRIBED") {
+          fetchRegistrations();
+        }
+      });
 
     channelRef.current = channel;
 
@@ -118,8 +139,9 @@ export default function Admin() {
         channelRef.current = null;
       }
     };
-  }, [authed]);
+  }, [authed, fetchRegistrations]);
 
+  // ── ACTIONS ────────────────────────────────────────────────────────────
   const updateStatus = async (id: string, status: "approved" | "rejected") => {
     setActionLoading(id + status);
     const { error } = await supabase
@@ -147,52 +169,56 @@ export default function Admin() {
     setActionLoading(null);
   };
 
+  // ── FILTERS ────────────────────────────────────────────────────────────
   const filtered = registrations.filter((r) => {
+    const q = search.toLowerCase();
     const matchSearch =
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = filter === "all" || r.role === filter;
-    const matchChecked =
-      checkedFilter === "all" ||
-      (checkedFilter === "checked" && r.checked_in) ||
+      r.name.toLowerCase().includes(q) ||
+      r.email.toLowerCase().includes(q) ||
+      (r.uucms || "").toLowerCase().includes(q);
+    const matchRole    = filter        === "all" || r.role   === filter;
+    const matchChecked = checkedFilter === "all" ||
+      (checkedFilter === "checked"     && r.checked_in) ||
       (checkedFilter === "not_checked" && !r.checked_in);
-    const matchStatus = statusFilter === "all" || r.status === statusFilter;
+    const matchStatus  = statusFilter  === "all" || r.status === statusFilter;
     return matchSearch && matchRole && matchChecked && matchStatus;
   });
 
   const stats = {
-    total: registrations.length,
-    audience: registrations.filter((r) => r.role === "audience").length,
+    total:        registrations.length,
+    audience:     registrations.filter((r) => r.role === "audience").length,
     participants: registrations.filter((r) => r.role === "participant").length,
-    checkedIn: registrations.filter((r) => r.checked_in).length,
-    approved: registrations.filter((r) => r.status === "approved").length,
-    pending: registrations.filter((r) => r.status === "pending").length,
-    rejected: registrations.filter((r) => r.status === "rejected").length,
+    checkedIn:    registrations.filter((r) => r.checked_in).length,
+    approved:     registrations.filter((r) => r.status === "approved").length,
+    pending:      registrations.filter((r) => r.status === "pending").length,
+    rejected:     registrations.filter((r) => r.status === "rejected").length,
   };
 
+  // ── CSV ────────────────────────────────────────────────────────────────
   const downloadCSV = () => {
     const rows = [
-      ["Name", "Email", "Phone", "Year", "Semester", "Role", "Status", "Checked In", "Registered At"],
-      ...registrations.map((r) => [
-        r.name, r.email, r.phone || "", r.year || "", r.semester || "", r.role,
-        r.status || "pending",
+      ["#", "Name", "Email", "Phone", "UUCMS ID", "Year", "Semester", "Role", "Status", "Checked In", "Registered At"],
+      ...registrations.map((r, i) => [
+        i + 1, r.name, r.email, r.phone || "",
+        r.uucms    || "",
+        r.year     ? `Year ${r.year}`    : "",
+        r.semester ? `Sem ${r.semester}` : "",
+        r.role, r.status || "pending",
         r.checked_in ? "Yes" : "No",
         new Date(r.created_at).toLocaleString(),
       ]),
     ];
-    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
+    const csv  = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "registrations.csv";
-    a.click();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = "registrations.csv"; a.click();
   };
 
   const statusBadge = (status: string) => {
     const cfg: Record<string, { bg: string; color: string; label: string }> = {
-      approved: { bg: "rgba(34,197,94,0.18)", color: "#22c55e", label: "✅ Approved" },
-      rejected: { bg: "rgba(239,68,68,0.18)", color: "#f87171", label: "❌ Rejected" },
+      approved: { bg: "rgba(34,197,94,0.18)",  color: "#22c55e", label: "✅ Approved" },
+      rejected: { bg: "rgba(239,68,68,0.18)",  color: "#f87171", label: "❌ Rejected" },
       pending:  { bg: "rgba(234,179,8,0.18)",  color: "#eab308", label: "⏳ Pending"  },
     };
     const c = cfg[status] ?? cfg.pending;
@@ -203,7 +229,7 @@ export default function Admin() {
     );
   };
 
-  // ── Login ────────────────────────────────────────────────────────────────
+  // ── LOGIN SCREEN ───────────────────────────────────────────────────────
   if (!authed) {
     return (
       <div style={styles.container}>
@@ -212,8 +238,7 @@ export default function Admin() {
           <div style={styles.lockIcon}>🔐</div>
           <h2 style={styles.loginTitle}>Admin Access</h2>
           <p style={styles.loginSub}>Izee Got Talent Dashboard</p>
-          {/* UPDATE #3: Subtle hint that multiple admins are supported */}
-          <p style={{ color: "#4b5563", fontSize: 11, marginBottom: 16, margin: "0 0 16px" }}>
+          <p style={{ color: "#4b5563", fontSize: 11, margin: "0 0 18px" }}>
             Up to 5 admins can be logged in simultaneously
           </p>
           <input
@@ -223,6 +248,7 @@ export default function Admin() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && login()}
+            autoFocus
           />
           {pwError && <div style={styles.errorBox}>{pwError}</div>}
           <button onClick={login} style={styles.loginBtn}>Enter Dashboard</button>
@@ -232,19 +258,15 @@ export default function Admin() {
     );
   }
 
-  // ── Dashboard ────────────────────────────────────────────────────────────
+  // ── DASHBOARD ──────────────────────────────────────────────────────────
   return (
     <div style={styles.pageContainer}>
       {confirmDelete && (
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>🗑️</div>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
-              Delete Registration?
-            </div>
-            <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 24 }}>
-              This action cannot be undone.
-            </div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Delete Registration?</div>
+            <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 24 }}>This action cannot be undone.</div>
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 onClick={() => deleteRegistration(confirmDelete)}
@@ -253,10 +275,7 @@ export default function Admin() {
               >
                 {actionLoading === confirmDelete + "delete" ? "Deleting..." : "Yes, Delete"}
               </button>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{ ...styles.actionBtn, background: "rgba(107,114,128,0.3)", flex: 1 }}
-              >
+              <button onClick={() => setConfirmDelete(null)} style={{ ...styles.actionBtn, background: "rgba(107,114,128,0.3)", flex: 1 }}>
                 Cancel
               </button>
             </div>
@@ -266,29 +285,26 @@ export default function Admin() {
 
       <div style={styles.sidebar}>
         <div style={styles.sidebarTitle}>🎤 Izee Admin</div>
-        {/* UPDATE #3: Show which admin is logged in */}
-        <div style={{ color: "#6b7280", fontSize: 11, marginBottom: 20, padding: "0 12px" }}>
-          Logged in as <span style={{ color: "#a78bfa", fontWeight: 700 }}>{adminLabel}</span>
-        </div>
+        <div style={{ color: "#4b5563", fontSize: 11, margin: "0 0 4px 12px" }}>Logged in as</div>
+        <div style={{ color: "#a78bfa", fontSize: 13, fontWeight: 700, margin: "0 0 20px 12px" }}>{adminLabel}</div>
         <nav style={styles.nav}>
-          <a href="/admin" style={styles.navItemActive}>📊 Dashboard</a>
+          <a href="/admin"   style={styles.navItemActive}>📊 Dashboard</a>
           <a href="/scanner" style={styles.navItem}>📷 QR Scanner</a>
-          <a href="/" style={styles.navItem}>🏠 Registration</a>
+          <a href="/"        style={styles.navItem}>🏠 Registration</a>
         </nav>
         <button onClick={logout} style={styles.logoutBtn}>🚪 Logout</button>
       </div>
 
       <div style={styles.main}>
-        {/* Stats */}
         <div style={styles.statsGrid}>
           {[
-            { label: "Total", value: stats.total, icon: "👥", color: "#7c3aed" },
-            { label: "Approved", value: stats.approved, icon: "✅", color: "#22c55e" },
-            { label: "Pending", value: stats.pending, icon: "⏳", color: "#eab308" },
-            { label: "Rejected", value: stats.rejected, icon: "❌", color: "#f87171" },
-            { label: "Audience", value: stats.audience, icon: "🪑", color: "#06b6d4" },
-            { label: "Participants", value: stats.participants, icon: "🎭", color: "#f59e0b" },
-            { label: "Checked In", value: stats.checkedIn, icon: "🎟️", color: "#a78bfa" },
+            { label: "Total",        value: stats.total,        icon: "👥", color: "#7c3aed" },
+            { label: "Approved",     value: stats.approved,     icon: "✅", color: "#22c55e" },
+            { label: "Pending",      value: stats.pending,      icon: "⏳", color: "#eab308" },
+            { label: "Rejected",     value: stats.rejected,     icon: "❌", color: "#f87171" },
+            { label: "Audience",     value: stats.audience,     icon: "🪑", color: "#06b6d4" },
+            { label: "Participants", value: stats.participants,  icon: "🎭", color: "#f59e0b" },
+            { label: "Checked In",   value: stats.checkedIn,    icon: "🎟️", color: "#a78bfa" },
           ].map((s) => (
             <div key={s.label} style={{ ...styles.statCard, borderColor: s.color + "44" }}>
               <div style={{ fontSize: 22, marginBottom: 4 }}>{s.icon}</div>
@@ -298,11 +314,10 @@ export default function Admin() {
           ))}
         </div>
 
-        {/* Controls */}
         <div style={styles.controls}>
           <input
-            style={{ ...styles.input, flex: 1, maxWidth: 240, marginBottom: 0 }}
-            placeholder="🔍 Search name or email..."
+            style={{ ...styles.input, flex: 1, maxWidth: 280, marginBottom: 0 }}
+            placeholder="🔍 Search name, email or UUCMS ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -317,14 +332,14 @@ export default function Admin() {
             <option value="approved">✅ Approved</option>
             <option value="rejected">❌ Rejected</option>
           </select>
-          <select style={{ ...styles.input, width: 150, marginBottom: 0 }} value={checkedFilter} onChange={(e) => setCheckedFilter(e.target.value as any)}>
+          <select style={{ ...styles.input, width: 160, marginBottom: 0 }} value={checkedFilter} onChange={(e) => setCheckedFilter(e.target.value as any)}>
             <option value="all">All Check-in</option>
             <option value="checked">✅ Checked In</option>
             <option value="not_checked">⏳ Not Checked</option>
           </select>
           <button onClick={downloadCSV} style={styles.csvBtn}>⬇️ CSV</button>
           <button onClick={fetchRegistrations} style={styles.refreshBtn} title="Manual refresh">🔄</button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{
               width: 8, height: 8, borderRadius: "50%",
               background: liveIndicator ? "#22c55e" : "#374151",
@@ -333,9 +348,13 @@ export default function Admin() {
             }} />
             <span style={{ color: "#6b7280", fontSize: 11 }}>LIVE</span>
           </div>
+          {lastUpdate && (
+            <span style={{ color: "#4b5563", fontSize: 11 }}>
+              {lastUpdate.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            </span>
+          )}
         </div>
 
-        {/* Table */}
         <div style={styles.tableWrapper}>
           {loading ? (
             <div style={styles.loadingCell}>Loading registrations...</div>
@@ -343,14 +362,14 @@ export default function Admin() {
             <table style={styles.table}>
               <thead>
                 <tr>
-                  {["#", "Name", "Email", "Phone", "Year", "Sem", "Role", "Approval", "Check-In", "Registered", "Actions"].map((h) => (
+                  {["#", "Name", "Email", "Phone", "UUCMS ID", "Year", "Sem", "Role", "Approval", "Check-In", "Registered", "Actions"].map((h) => (
                     <th key={h} style={styles.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={11} style={styles.emptyCell}>No registrations found</td></tr>
+                  <tr><td colSpan={12} style={styles.emptyCell}>No registrations found</td></tr>
                 ) : filtered.map((r, i) => (
                   <tr
                     key={r.id}
@@ -363,15 +382,14 @@ export default function Admin() {
                     <td style={{ ...styles.td, fontWeight: 600, color: "#e5e7eb", whiteSpace: "nowrap" }}>{r.name}</td>
                     <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.email}</td>
                     <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.phone || "—"}</td>
-                    {/* UPDATE #2: Year & Semester columns */}
+                    <td style={{ ...styles.td, color: "#c4b5fd", fontSize: 12, fontFamily: "monospace", fontWeight: 600 }}>{r.uucms || "—"}</td>
                     <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.year ? `Y${r.year}` : "—"}</td>
                     <td style={{ ...styles.td, color: "#9ca3af", fontSize: 12 }}>{r.semester ? `S${r.semester}` : "—"}</td>
                     <td style={styles.td}>
                       <span style={{
                         padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700,
                         background: r.role === "participant" ? "rgba(245,158,11,0.2)" : "rgba(6,182,212,0.2)",
-                        color: r.role === "participant" ? "#f59e0b" : "#06b6d4",
-                        whiteSpace: "nowrap",
+                        color: r.role === "participant" ? "#f59e0b" : "#06b6d4", whiteSpace: "nowrap",
                       }}>
                         {r.role.toUpperCase()}
                       </span>
@@ -381,44 +399,30 @@ export default function Admin() {
                       <span style={{
                         padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700,
                         background: r.checked_in ? "rgba(34,197,94,0.2)" : "rgba(107,114,128,0.2)",
-                        color: r.checked_in ? "#22c55e" : "#9ca3af",
-                        whiteSpace: "nowrap",
+                        color: r.checked_in ? "#22c55e" : "#9ca3af", whiteSpace: "nowrap",
                       }}>
                         {r.checked_in ? "✅ Yes" : "⏳ No"}
                       </span>
                     </td>
                     <td style={{ ...styles.td, color: "#6b7280", fontSize: 11, whiteSpace: "nowrap" }}>
-                      {new Date(r.created_at).toLocaleDateString("en-IN", {
-                        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-                      })}
+                      {new Date(r.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </td>
                     <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
                       <div style={{ display: "flex", gap: 6 }}>
                         {r.status !== "approved" && (
-                          <button
-                            onClick={() => updateStatus(r.id, "approved")}
-                            disabled={actionLoading === r.id + "approved"}
-                            style={{ ...styles.actionBtn, background: "rgba(34,197,94,0.2)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.4)" }}
-                            title="Approve"
-                          >
+                          <button onClick={() => updateStatus(r.id, "approved")} disabled={actionLoading === r.id + "approved"}
+                            style={{ ...styles.actionBtn, background: "rgba(34,197,94,0.2)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.4)" }} title="Approve">
                             {actionLoading === r.id + "approved" ? "..." : "✅"}
                           </button>
                         )}
                         {r.status !== "rejected" && (
-                          <button
-                            onClick={() => updateStatus(r.id, "rejected")}
-                            disabled={actionLoading === r.id + "rejected"}
-                            style={{ ...styles.actionBtn, background: "rgba(239,68,68,0.2)", color: "#f87171", border: "1px solid rgba(239,68,68,0.4)" }}
-                            title="Reject"
-                          >
+                          <button onClick={() => updateStatus(r.id, "rejected")} disabled={actionLoading === r.id + "rejected"}
+                            style={{ ...styles.actionBtn, background: "rgba(239,68,68,0.2)", color: "#f87171", border: "1px solid rgba(239,68,68,0.4)" }} title="Reject">
                             {actionLoading === r.id + "rejected" ? "..." : "❌"}
                           </button>
                         )}
-                        <button
-                          onClick={() => setConfirmDelete(r.id)}
-                          style={{ ...styles.actionBtn, background: "rgba(107,114,128,0.2)", color: "#9ca3af", border: "1px solid rgba(107,114,128,0.3)" }}
-                          title="Delete"
-                        >
+                        <button onClick={() => setConfirmDelete(r.id)}
+                          style={{ ...styles.actionBtn, background: "rgba(107,114,128,0.2)", color: "#9ca3af", border: "1px solid rgba(107,114,128,0.3)" }} title="Delete">
                           🗑️
                         </button>
                       </div>
@@ -441,7 +445,7 @@ const styles: Record<string, React.CSSProperties> = {
   loginCard: { width: "100%", maxWidth: 380, background: "rgba(18,9,31,0.95)", border: "1px solid rgba(124,58,237,0.3)", borderRadius: 20, padding: "40px 32px", textAlign: "center", zIndex: 1, position: "relative" },
   lockIcon: { fontSize: 48, marginBottom: 12 },
   loginTitle: { fontFamily: "'Orbitron', sans-serif", fontSize: 22, fontWeight: 900, color: "#fff", margin: "0 0 8px" },
-  loginSub: { color: "#6b7280", fontSize: 13, marginBottom: 8 },
+  loginSub: { color: "#6b7280", fontSize: 13, margin: "0 0 6px" },
   input: { width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(124,58,237,0.3)", background: "rgba(15,8,32,0.8)", color: "#fff", fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "'Space Grotesk', sans-serif", marginBottom: 12 },
   errorBox: { background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#f87171", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 12, textAlign: "left" },
   loginBtn: { width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #7c3aed, #06b6d4)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 15, fontFamily: "'Space Grotesk', sans-serif", marginBottom: 16 },
